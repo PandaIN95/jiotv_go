@@ -1,0 +1,65 @@
+name: Auto Build & Release from Upstream
+
+on:
+  schedule:
+    - cron: '0 * * * *' # Check every hour
+  workflow_dispatch:
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout your modified branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: modified
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Get latest release (including pre-releases) from upstream
+        id: get_upstream
+        run: |
+          UPSTREAM_API="https://api.github.com/repos/JioTV-Go/jiotv_go/releases"
+          LATEST_TAG=$(curl -s $UPSTREAM_API | jq -r '.[0].tag_name')
+          if [ "$LATEST_TAG" = "null" ] || [ -z "$LATEST_TAG" ]; then
+            echo "❌ Could not fetch latest upstream release tag."
+            exit 0
+          fi
+          echo "LATEST_TAG=$LATEST_TAG" >> $GITHUB_ENV
+          echo "Latest upstream tag: $LATEST_TAG"
+
+      - name: Check if this release already exists in your fork
+        id: check_release
+        run: |
+          EXISTS=$(gh release view "$LATEST_TAG" >/dev/null 2>&1 && echo "yes" || echo "no")
+          echo "EXISTS=$EXISTS" >> $GITHUB_ENV
+          echo "Release already exists? $EXISTS"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Skip if release already exists
+        if: env.EXISTS == 'yes'
+        run: echo "✅ Release ${{ env.LATEST_TAG }} already exists in fork. Skipping build."
+
+      - name: Build Windows .exe binary
+        if: env.EXISTS == 'no'
+        run: |
+          mkdir -p build
+          GOOS=windows GOARCH=amd64 go build -o build/app-${{ env.LATEST_TAG }}.exe .
+          echo "✅ Build complete: build/app-${{ env.LATEST_TAG }}.exe"
+
+      - name: Publish release in fork
+        if: env.EXISTS == 'no'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.LATEST_TAG }}
+          name: 'Auto Release ${{ env.LATEST_TAG }}'
+          files: build/*.exe
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
