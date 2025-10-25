@@ -21,10 +21,11 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
+      # ✅ Add the original repo as upstream
       - name: Add upstream remote
         run: git remote add upstream https://github.com/JioTV-Go/jiotv_go.git
 
-      # ✅ Fetch and merge the upstream deploy branch
+      # ✅ Fetch and merge upstream deploy branch
       - name: Fetch and merge upstream into deploy
         run: |
           git fetch upstream
@@ -32,9 +33,13 @@ jobs:
           git merge upstream/deploy || true
           git push origin deploy
 
+      # ✅ Rebase modified branch only if it exists
       - name: Rebase your modified branch on top of deploy
-        if: ${{ github.ref_name != 'deploy' && exists('refs/heads/modified') }}
         run: |
-          git checkout modified
-          git rebase deploy || true
-          git push origin modified --force
+          if git show-ref --verify --quiet refs/heads/modified; then
+            git checkout modified
+            git rebase deploy || true
+            git push origin modified --force
+          else
+            echo "Branch 'modified' does not exist — skipping rebase."
+          fi
